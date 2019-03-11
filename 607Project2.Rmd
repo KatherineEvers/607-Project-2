@@ -1,0 +1,465 @@
+---
+title: "607 Project 2"
+author: "Katherine Evers"
+date: "3/2/2019"
+output: html_document
+---
+
+##Contents
+1. [Project Overview](#project_overview)  
+2. [Dataset 1: Avocado Prices](#avocado)
+3. [Dataset 3: Color and Heat Absorption](#absorption)
+4. [Dataset 2: 2010-2018 Census Data](#census)
+
+
+<a id="project_overview"></a>
+
+##Project Overview
+The goal of this assignment is to practice preparing different datasets for downstream analysis work.  
+
+Choose any three of the “wide” datasets identified in the Week 6 Discussion items. 
+
+For each of the three chosen datasets:  
+
+1. Create a .CSV file (or optionally, a MySQL database!) that includes all of the information included in the dataset. You’re encouraged to use a “wide” structure similar to how the information appears in the discussion item, so that you can practice tidying and transformations as described below.  
+
+2. Read the information from your .CSV file into R, and use tidyr and dplyr as needed to tidy and transform your data.
+
+3. Perform the analysis requested in the discussion item.  
+
+4. Your code should be in an R Markdown file, posted to rpubs.com, and should include
+narrative descriptions of your data cleanup work, analysis, and conclusions.  
+
+
+```{r}
+library("tidyr")
+library("dplyr")
+library("plyr")
+library("stringr")
+library("kableExtra")
+library("ggplot2")
+```
+
+<a id="avocado"></a>
+
+##Avocado Prices
+This dataset, submitted by Samriti Malhotra, contains weekly 2018 retail scan data for National retail volume (units) and price. Retail scan data comes directly from retailers’ cash registers based on actual retail sales of Hass avocados. Multi-outlet reporting includes an aggregation of the following channels: grocery, mass, club, drug, dollar and military. The Average Price (of avocados) in the table reflects a per unit (per avocado) cost, even when multiple units (avocados) are sold in bags. The Product Lookup codes (PLU’s) in the table are only for Hass avocados. 
+
+###Tidy Data
+
+```{r}
+#Read in data
+avocadoPrices <- read.csv("https://raw.githubusercontent.com/KatherineEvers/607-Project-2/master/avocadoPrices.csv", header = TRUE)
+
+#Rename columns
+names(avocadoPrices)[4] <- "4046"
+names(avocadoPrices)[5] <- "4225"
+names(avocadoPrices)[6] <- "4770"
+
+head(avocadoPrices)
+
+avocadoPrices1 <- avocadoPrices %>%
+  #separate data into type and sold count columns
+  gather(Type, soldCount, 4:10)
+
+#manipulate table style
+avocadoPrices1  %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+avocadoPrices2 <- avocadoPrices1 %>%
+  #Order rows by chronological date and then type
+  arrange(Date, Type)
+
+#Split date column into separate year, month, and day columns
+avocadoPrices3 <- separate(data = avocadoPrices2,col = "Date",into = c("Year","Month","Day"))
+#Create a subset of the data
+avocadoPrices3 <- subset(avocadoPrices3, select = c("Month", "Total.Volume", "Type", "soldCount"))
+#Remove rows with total bags
+avocadoPrices3 <- avocadoPrices3[!grepl("Total.Bags", avocadoPrices3$Type),]
+
+avocadoPrices3  %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+```
+
+###Analyze Data
+```{r}
+#Calculate the percentage of each avocado type sold for each date
+avocadoPrices4 <- avocadoPrices2 %>% 
+        mutate(soldPercent = round(soldCount / Total.Volume * 100, 2))
+
+avocadoPrices4  %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+#Sum volume and soldCount by Month and Type for each avocado type
+avocadoPrices6 <- avocadoPrices3 %>% 
+  group_by(Month, Type) %>% 
+  summarise_all(funs(sum))
+
+#Calculate monthly percent sold of each type
+avocadoPrices7 <- avocadoPrices6 %>% 
+        mutate(soldPercent = round(soldCount / Total.Volume * 100, 2))
+
+avocadoPrices7  %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+#Remove month column
+avocadoSummary <- subset(avocadoPrices3, select = c("Type", "soldCount"))
+
+#Sum volume and soldCount byType
+avocadoSummary2 <- ddply(avocadoSummary, "Type", numcolwise(sum))
+total = sum(avocadoSummary2$soldCount)
+
+#Calculate overall percentage of each type sold
+avocadoSummary3 <- avocadoSummary2 %>%
+        mutate(soldPercent = round(soldCount / total * 100, 2)) %>%
+        arrange(desc(soldPercent))
+
+avocadoSummary3 %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) 
+```
+
+###Visualize Data
+
+```{r}
+plot <- ggplot(avocadoSummary3, aes(y = soldPercent, x =Type, color =Type, fill = Type)) + 
+    geom_bar( stat = "identity") +
+    geom_text(aes(label = soldPercent), vjust = -.3) +
+    ggtitle("Avocado Sales Percentages") +
+    labs(y = "Percentage sold") 
+
+plot
+
+plot1 <- ggplot(avocadoPrices2, aes(x=Date, y=AveragePrice, colour = AveragePrice)) + 
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(axis.text.x=element_text(size=8)) +
+  ggtitle("Average Price through 2018")
+
+plot1
+#Prices are low from late January through July and then rise
+
+plot2 <- ggplot(avocadoPrices2, aes(x=Total.Volume, y=AveragePrice, colour = AveragePrice)) + 
+  geom_point() +
+  ggtitle("Average Price vs. Volume")
+
+plot2
+#Average price and volume have an indirect relationship - as volume increases, price decreases
+
+plot3 <- ggplot(avocadoPrices7, aes(x = Month, y = soldPercent, fill = Type, label = soldPercent)) +
+  geom_bar(stat = "identity", width = 0.95, position = "stack") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) +
+  ggtitle("Month Sales Percentages")
+
+plot3
+#4046 avocados are the most popular type sold while large bags are the least popular sold.
+```
+
+###Conclusion
+This analysis on 2018 avocado retail scan data revealed many insights. Overall, avocados with PLU 4046 were most popularly purchased (32.95%), followed by 4225 (28.64%), small bags (26.3%), large bags (9.71%), 4770 (1.81%), and x-large bags (0.59%). Comparing the monthly percentages of each avocado type sold revealed that popularity ranking did not change. Average price and volume had an indirect relationship. Average price was lowest from late January through July and ranged from $1.00 - $1.10. 
+
+<a id="absorption"></a>
+
+##Color and Heat Absorption
+
+This dataset was submitted by Christopher Ayre. He helped his daughter on a project for the science fair. For their experiment, they placed thermometers in 5 different color t-shirts and recorded the temperatures at 10 minute intervals for 1 hour as the garments were exposed to heat. The heater was turned off, and the temperatures measured again at 10 minute intervals as the garments cooled. This data can be used to analyze the rate at which different colors absorb and release heat.
+
+Requested analysis:
+
+The table is wide and does not meet the criteria for tidy data:
+
+a) Multiple types of observational units are stored in the same table  
+- Separate table for heating and cooling
+
+b) The variable of elapsed time does not have its own column  
+- Create time column
+
+###Tidy Data
+```{r}
+#Read in data
+absorption <- read.csv("https://raw.githubusercontent.com/KatherineEvers/607-Project-2/master/science%20proj%20data.csv")
+
+#Rename columns
+colnames(absorption) <- c("Color", 0, 10, 20, 30, 40, 50, 60, "Phase")
+
+absorption1 <- absorption %>%
+  #separate data into minutes and temperature columns
+  gather(Minutes, Temperature, 2:8 ) %>%
+  #spread color into separate columns
+  spread(1,4)
+
+#Create separate tables for heating and cooling
+cooling <- subset(absorption1, Phase == "cooling")
+
+cooling %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+heating <- subset(absorption1, Phase == "heating")
+
+heating %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+###Analyze Data
+
+```{r}
+#Calculate temperature rate of change for cooling
+cooling1 <- cooling %>%
+   mutate(blackPctChange = (lead(black)/black - 1) * 100) %>%
+   mutate(greenPctChange = (lead(green)/green - 1) * 100) %>%
+   mutate(pinkPctChange = (lead(pink)/pink - 1) * 100) %>%
+   mutate(redPctChange = (lead(red)/red - 1) * 100) %>%
+   mutate(whitePctChange = (lead(white)/white - 1) * 100) 
+
+#Remove row with NA
+cooling1 <- cooling1 [!is.na(cooling1$blackPctChange), ]
+
+cooling1 %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+#Calculate temperature rate of change for heating
+heating1 <- heating %>%
+   mutate(blackPctChange = (lead(black)/black - 1) * 100) %>%
+   mutate(greenPctChange = (lead(green)/green - 1) * 100) %>%
+   mutate(pinkPctChange = (lead(pink)/pink - 1) * 100) %>%
+   mutate(redPctChange = (lead(red)/red - 1) * 100) %>%
+   mutate(whitePctChange = (lead(white)/white - 1) * 100) 
+
+#Remove row with NA
+heating1 <- heating1[!is.na(heating1$blackPctChange), ]
+
+heating1 %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+#Calculate overall cooling temperature change percentage
+blackCooling <- round((last(cooling$black) - first(cooling$black)) / last(cooling$black),2)
+greenCooling <- round((last(cooling$green) - first(cooling$green)) / last(cooling$green),2)
+pinkCooling <- round((last(cooling$pink) - first(cooling$pink)) / last(cooling$pink),2)
+redCooling <- round((last(cooling$red) - first(cooling$red)) / last(cooling$red),2)
+whiteCooling <- round((last(cooling$white) - first(cooling$white)) / last(cooling$white),2)
+
+coolingPct <- c(blackCooling, greenCooling, pinkCooling, redCooling, whiteCooling)
+colors <- c("Black", "Green", "Pink", "Red", "White")
+
+#Calculate overall heating temperature change percentage
+blackHeating <- round((last(heating$black) - first(heating$black)) / last(heating$black),2)
+greenHeating <- round((last(heating$green) - first(heating$green)) / last(heating$green),2)
+pinkHeating <- round((last(heating$pink) - first(heating$pink)) / last(heating$pink),2)
+redHeating <- round((last(heating$red) - first(heating$red)) / last(heating$red),2)
+whiteHeating <- round((last(heating$white) - first(heating$white)) / last(heating$white),2)
+
+heatingPct <- c(blackHeating, greenHeating, pinkHeating, redHeating, whiteHeating)
+```
+
+###Visualize Data
+```{r}
+col <- c( "black", "green","pink", "red", "white")
+barplot(heatingPct, names.arg = colors, col = col, main = "Overall Heating Temperature Change Rate")
+barplot(coolingPct, names.arg = colors, col = col, main = "Overall Cooling Temperature Change Rate")
+
+heatingPlot <- ggplot(heating, aes(x = Minutes, group = 1)) + 
+  geom_point(aes(y = black, colour= "black")) +
+  geom_line(aes(y = black, colour= "black")) +
+  geom_point(aes(y = green, colour= "green")) +
+  geom_line(aes(y = green, colour= "green")) +
+  geom_point(aes(y = pink, colour= "pink")) +
+  geom_line(aes(y = pink, colour= "pink")) +
+  geom_point(aes(y = red, colour = "red")) +
+  geom_line(aes(y = red, colour= "red")) +
+  geom_point(aes(y = white, colour= "white")) +
+  geom_line(aes(y = white, colour= "white")) +
+  scale_color_manual(values=c( "black", "green","pink", "red", "white")) +
+  labs(y = "Temperature (F)") +
+  ggtitle("Heating: T-Shirt Temperature")
+
+heatingPlot
+
+coolingPlot <- ggplot(cooling, aes(x = Minutes, group = 1)) + 
+  geom_point(aes(y = black, colour= "black")) +
+  geom_line(aes(y = black, colour= "black")) +
+  geom_point(aes(y = green, colour= "green")) +
+  geom_line(aes(y = green, colour= "green")) +
+  geom_point(aes(y = pink, colour= "pink")) +
+  geom_line(aes(y = pink, colour= "pink")) +
+  geom_point(aes(y = red, colour = "red")) +
+  geom_line(aes(y = red, colour= "red")) +
+  geom_point(aes(y = white, colour= "white")) +
+  geom_line(aes(y = white, colour= "white")) +
+  scale_color_manual(values=c( "black", "green","pink", "red", "white")) +
+  labs(y = "Temperature (F)") +
+  ggtitle("Cooling: T-Shirt Temperature") 
+
+coolingPlot
+
+heatingPlot1 <- ggplot(heating1, aes(x = Minutes, group = 1)) + 
+  geom_point(aes(y = blackPctChange, colour= "black")) +
+  geom_line(aes(y = blackPctChange, colour= "black")) +
+  geom_point(aes(y = greenPctChange, colour= "green")) +
+  geom_line(aes(y = greenPctChange, colour= "green")) +
+  geom_point(aes(y = pinkPctChange, colour= "pink")) +
+  geom_line(aes(y = pinkPctChange, colour= "pink")) +
+  geom_point(aes(y = redPctChange, colour = "red")) +
+  geom_line(aes(y = redPctChange, colour= "red")) +
+  geom_point(aes(y = whitePctChange, colour= "white")) +
+  geom_line(aes(y = whitePctChange, colour= "white")) +
+  scale_color_manual(values=c( "black", "green","pink", "red", "white")) +
+  labs(y = "Percentage change") +
+  ggtitle("Heating: Temperature Change Rate")
+
+heatingPlot1
+
+coolingPlot1 <- ggplot(cooling1, aes(x = Minutes, group = 1)) + 
+  geom_point(aes(y = blackPctChange, colour= "black")) +
+  geom_line(aes(y = blackPctChange, colour= "black")) +
+  geom_point(aes(y = greenPctChange, colour= "green")) +
+  geom_line(aes(y = greenPctChange, colour= "green")) +
+  geom_point(aes(y = pinkPctChange, colour= "pink")) +
+  geom_line(aes(y = pinkPctChange, colour= "pink")) +
+  geom_point(aes(y = redPctChange, colour = "red")) +
+  geom_line(aes(y = redPctChange, colour= "red")) +
+  geom_point(aes(y = whitePctChange, colour= "white")) +
+  geom_line(aes(y = whitePctChange, colour= "white")) +
+  scale_color_manual(values=c( "black", "green","pink", "red", "white")) +
+  labs(y = "Percentage change") +
+  ggtitle("Cooling: Temperature Change Rate")
+
+coolingPlot1
+```
+
+###Conclusion
+From the plots, we see that black had the greatest heating and cooling temperature change rate and temperatures while white had the smallest. In general, the largest rate of temperature change occurred in the first 0 to 10 minutes.
+
+<a id="census"></a>
+
+##2010-2018 Census Data
+Arun Reddy found a census dataset for United States and Puerto Rico population for 2010 to 2018. The dataset gives population metrics such as estimated population, change in population from the estimate, and national rank in population for each year from 2010 to 2018.
+
+Requested analysis:
+
+This is a good example of untidy data can be cleansed and make it more presentable. The following steps can be performed to cleanse the data.
+
+1. All the 4 metrics by years are spread out by column-wise can be changed into rows.
+
+2. Row names/Column name which includes the year as a concatenation can be well formatted to make more readable. 
+
+3. Some of the column names don't have the right data type like population change, national rank is factorial data type which is unnecessary.
+
+###Tidy Data
+```{r}
+#Read in data
+population <- read.csv("https://raw.githubusercontent.com/KatherineEvers/607-Project-2/master/Population%20DataSet.csv")
+
+#Remove unneccessary identification columns
+population1 <- population[,6:62]
+
+#Let's focus on individual states and DC (Exclude entire US, territories, and Puerto Rico)
+population1 <- population1[!population1$NAME == "United States",]
+population1 <- population1[!population1$NAME == "Northeast Region",]
+population1 <- population1[!population1$NAME == "Midwest Region",]
+population1 <- population1[!population1$NAME == "South Region",]
+population1 <- population1[!population1$NAME == "West Region",]
+population1 <- population1[!population1$NAME == "Puerto Rico",]
+
+#rename column
+colnames(population1)[1] <- "State"
+
+population2 <- population1 %>%
+  #separate data into metric and value columns
+  gather(Metric, Value, 2:57 )
+
+#Create vector of years
+Year <- as.numeric(str_extract(population2$Metric, "([0-9]{4})"))
+#Remove year from metric description
+population2$Metric <- gsub("([0-9])|(_)","",population2$Metric)
+
+#Add year as column to datafram
+population3 <- cbind(Year, population2)
+
+population3 %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "100%", height = "200px")
+
+#Create subset dataframe with only ppopchange
+ppopchg <- subset(population3, Metric == "PPOPCHG")
+```
+
+###Analyze Data
+```{r}
+#Let's investigate which state had the maximum and minimum population percent change each year
+
+#Find the states with the largest increase in population percentage each year
+top <- ppopchg %>% 
+    group_by(Year) %>% 
+    slice(which.max(Value))
+
+top 
+
+#Create a frequency table
+countTop <- as.data.frame(table(top$State))
+#Replace 0 with NA
+countTop[countTop==0] <- NA
+#Remove rows with NA
+countTop <- countTop[!is.na(countTop$Freq), ]
+
+#Arrange rows by decreasing values
+countTop <- countTop %>%
+  arrange(desc(Freq))
+colnames(countTop)[1] <- "State"
+
+countTop
+
+#Repeat precious process to find the states with the largest decrease in population percentage each year
+bottom <- ppopchg %>% 
+    group_by(Year) %>% 
+    slice(which.min(Value))
+
+bottom 
+
+countBottom <- as.data.frame(table(bottom$State))
+countBottom[countBottom==0] <- NA
+countBottom <- countBottom[!is.na(countBottom$Freq), ]
+
+countBottom <- countBottom %>%
+  arrange(desc(Freq))
+colnames(countBottom)[1] <- "State"
+
+countBottom
+```
+
+###Visualize Data
+```{r}
+plot <- ggplot(countTop, aes(y = Freq, x = State, color = State, fill = State)) + 
+    geom_bar( stat = "identity") +
+    labs(y = "Frequency") +
+    ggtitle("Frequency of States with the Largest Population Increase Percentage") 
+
+plot
+
+plot1 <- ggplot(countBottom, aes(y = Freq, x = State, color = State, fill = State)) + 
+    geom_bar( stat = "identity") +
+    labs(y = "Frequency") +
+    ggtitle("Frequency of States with the Largest Population Decrease Percentage") 
+
+plot1
+```
+
+###Conclusion
+From this analysis of 2010-2018 U.S. census data, we see the largest population percentage increases occurred in D.C., North Dakota, Idaho, Nevada, and Utah. We see the largest population precentage decreases occurred in West Virginia, Michigan, Rhode Island, Vermont,and Wyoming. Further analysis could investigate why so many people were moving to or from these states. 
